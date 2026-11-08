@@ -1,0 +1,12 @@
+const {app} = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const data = fs.mkdtempSync(path.join(os.tmpdir(), 'amanita-connections-'));
+app.setPath('userData', data);
+process.env.AMANITA_SMOKE = '1';
+app.disableHardwareAcceleration();
+const project = require('../src/model.js').seed();
+project.notes.push({id:'iris',title:'Iris',body:'Another character',kind:'character',importance:2,status:'seed',color:'rose',x:1030,y:80});
+fs.writeFileSync(path.join(data,'project.amanita.json'),JSON.stringify(project));
+require('../desktop/main.cjs');

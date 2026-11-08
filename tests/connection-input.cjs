@@ -1,0 +1,84 @@
+const { _electron } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+(async () => {
+  const app = await _electron.launch({ executablePath: require('electron'), args: ['tests/connection-fixture.cjs'] });
+  try {
+    const page = await app.firstWindow();
+    await page.locator('[data-filter="character"]').click();
+    // Reproduce the reported character-to-character workflow using actual input.
+    await page.locator('.note[data-id="mara"]').click();
+    await page.locator('#connect').click();
+    assert.equal(await page.locator('#inspector').isVisible(), false, 'drawer leaves room for both notes');
+    await page.locator('.note[data-id="iris"]').click();
+    await page.locator('#dialog-input').fill('sister of');
+    await page.locator('#connection-direction').selectOption('forward');
+    await page.locator('#dialog-input').press('Enter');
+    await page.waitForFunction(() => project.connections.some(c => c.label === 'sister of'));
+    assert.equal(await page.locator('#dialog').isVisible(), false);
+    const sisterId = await page.evaluate(() => project.connections.find(c=>c.label==='sister of').id);
+    const sisterPath = page.locator('[data-connection-id="'+sisterId+'"]');
+    assert.equal(await sisterPath.getAttribute('marker-end'),'url(#thread-arrow)');
+    assert.equal(await sisterPath.getAttribute('marker-start'),null);
+    // The toolbar also works when no note has been selected yet.
+    await page.locator('#close-inspector').click();
+    await page.locator('#connect').click();
+    await page.locator('.note[data-id="iris"]').click();
+    assert.equal(await page.locator('#dialog').isVisible(), false, 'first click chooses source');
+    await page.locator('.note[data-id="mara"]').click();
+    await page.locator('#dialog-input').fill('looks up to');
+    await page.locator('#connection-direction').selectOption('reverse');
+    await page.locator('#dialog-confirm').click();
+    await page.waitForFunction(() => project.connections.some(c => c.label === 'looks up to'));
+    const reverseId = await page.evaluate(() => project.connections.find(c=>c.label==='looks up to').id);
+    assert.equal(await page.locator('[data-connection-id="'+reverseId+'"]').getAttribute('marker-start'),'url(#thread-arrow)');
+    assert.equal(await page.locator('[data-connection-id="'+reverseId+'"]').getAttribute('marker-end'),null);
+    // Cancel and Escape must remain non-destructive.
+    const count = await page.evaluate(() => project.connections.length);
+    await page.locator('#connect-selected').click();
+    await page.locator('.note[data-id="mara"]').click();
+    await page.locator('#dialog-cancel').click();
+    assert.equal(await page.evaluate(() => project.connections.length), count);
+    assert.equal(await page.locator('.connect-target').count(), 0);
+    await page.locator('#connect').click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.connect-target').count(), 0);
+    // Ensure the expanded connection canvas keeps targets clickable in a small window.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000,700));
+    await page.locator('[data-filter="character"]').click();
+    await page.locator('.note[data-id="mara"]').click();
+    await page.locator('#connect-selected').click();
+    await page.locator('.note[data-id="iris"]').click();
+    await page.locator('#dialog-input').fill('rival of');
+    await page.locator('#connection-direction').selectOption('both');
+    await page.locator('#dialog-input').press('Enter');
+    await page.waitForFunction(() => project.connections.some(c => c.label === 'rival of'));
+    const rivalId = await page.evaluate(() => project.connections.find(c=>c.label==='rival of').id);
+    const rivalPath = page.locator('[data-connection-id="'+rivalId+'"]');
+    assert.equal(await rivalPath.getAttribute('marker-start'),'url(#thread-arrow)');
+    assert.equal(await rivalPath.getAttribute('marker-end'),'url(#thread-arrow)');
+    await page.getByRole('button',{name:'Edit connection to Iris',exact:true}).last().click();
+    assert.equal(await page.locator('#connection-direction').inputValue(),'both');
+    await page.locator('#connection-direction').selectOption('none');
+    await page.locator('#dialog-input').press('Enter');
+    await page.waitForFunction(() => project.connections.find(c=>c.label==='rival of').direction==='none');
+    assert.equal(await rivalPath.getAttribute('marker-start'),null);
+    assert.equal(await rivalPath.getAttribute('marker-end'),null);
+    await page.locator('#close-inspector').click();
+    await page.keyboard.press('Control+z');
+    assert.equal(await page.evaluate(() => project.connections.find(c=>c.label==='rival of').direction),'both');
+    await page.keyboard.press('Control+Shift+z');
+    assert.equal(await page.evaluate(() => project.connections.find(c=>c.label==='rival of').direction),'none');
+    await page.evaluate(() => save());
+    const dataDir = await app.evaluate(({ app }) => app.getPath('userData'));
+    const saved = JSON.parse(await fs.readFile(path.join(dataDir,'project.amanita.json'),'utf8'));
+    assert.equal(saved.connections.some(c=>c.from==='mara' && c.to==='iris' && c.label==='sister of' && c.direction==='forward'),true);
+    assert.equal(saved.connections.find(c=>c.label==='looks up to').direction,'reverse');
+    assert.equal(saved.connections.find(c=>c.label==='rival of').direction,'none');
+    await page.reload();
+    await page.waitForFunction(() => typeof project !== 'undefined' && project?.connections.some(c=>c.label==='sister of'));
+    assert.equal(await page.evaluate(() => project.connections.find(c=>c.label==='sister of').direction),'forward');
+    console.log('Connection input regression passed: directions and arrowheads, editing, undo/redo, two characters, Enter and mouse submission, source-first and toolbar-first, cancellation, small-window targeting, native save/reload.');
+  } finally { await app.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });
