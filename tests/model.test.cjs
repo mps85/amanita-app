@@ -68,3 +68,18 @@ test('older story beats migrate to unplaced and placement/order round-trip', () 
   beat.beatStage = 'wrong'; assert.throws(() => M.validate(p));
   beat.beatStage = 'early'; beat.beatOrder = -1; assert.throws(() => M.validate(p));
 });
+
+test('shared note and beat memberships survive export and reject dangling or duplicate IDs', () => {
+  const p = M.seed();
+  p.stories = [{ id: 'one', title: 'One' }, { id: 'two', title: 'Two' }];
+  M.updateNote(p, 'magic', { storyIds: ['one', 'two'] });
+  M.updateNote(p, 'scene', { storyIds: ['two'] });
+  assert.deepEqual(M.validate(JSON.parse(JSON.stringify(p))), p);
+  for (const storyIds of [['missing'], ['one', 'one'], 'one', null]) {
+    M.updateNote(p, 'scene', { storyIds });
+    assert.throws(() => M.validate(p));
+  }
+  M.updateNote(p, 'scene', { storyIds: ['two'] });
+  p.stories[1].id = 'one';
+  assert.throws(() => M.validate(p));
+});

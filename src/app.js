@@ -5,6 +5,7 @@ const names = { idea: 'Idea', character: 'Character', world: 'Worldbuilding', st
 const statusNames = { seed: 'Seed', exploring: 'Exploring', established: 'Established', locked: 'Locked rule' };
 const statusIcons = { seed: '◦', exploring: '◐', established: '●', locked: '◆' };
 let project, selected = null, filter = 'all', connectFrom = null, connecting = false, gesture = null;
+let storyScope = '';
 let view = { x: 0, y: 0, zoom: 1 };
 let history = [], future = [], lastEdit = 0, lastEditKey = '', revision = 0;
 let toastTimer, dialogResolve, pendingImageNote = null;
@@ -82,14 +83,33 @@ async function save() {
   }
 }
 function changed() { renderBoard(); void save(); }
+function inStory(note) { return !storyScope || !!note.storyIds?.includes(storyScope); }
+function renderStoryControls() {
+  const stories = project.stories || [];
+  const picker = $('story-scope');
+  const entries = [['', 'All stories'], ...stories.map(story => [story.id, story.title])];
+  if (picker.options.length !== entries.length || entries.some(([id, title], i) => picker.options[i].value !== id || picker.options[i].text !== title)) {
+    picker.replaceChildren(...entries.map(([id, title]) => new Option(title, id)));
+  }
+  picker.value = storyScope;
+  $('rename-story').hidden = $('remove-story').hidden = !storyScope;
+  $('add-story').disabled = stories.length >= M.MAX_STORIES;
+}
+function setStoryScope(id) {
+  storyScope = id;
+  cancelConnect();
+  closeInspector();
+  fit();
+}
 function visibleNotes() {
   const query = $('search').value.toLowerCase().trim();
   const certainty = $('certainty-filter').value;
-  return project.notes.filter(n => (filter === 'all' ? n.kind !== 'story' : n.kind === filter) && (certainty === 'all' || n.status === certainty) && (!query || (n.title + ' ' + n.body).toLowerCase().includes(query)));
+  return project.notes.filter(n => inStory(n) && (filter === 'all' ? n.kind !== 'story' : n.kind === filter) && (certainty === 'all' || n.status === certainty) && (!query || (n.title + ' ' + n.body).toLowerCase().includes(query)));
 }
 function renderBoard() {
   $('project-name').textContent = project.title || 'Untitled comic';
-  for (const kind of ['all', 'character', 'world', 'story', 'image']) $(kind + '-count').textContent = project.notes.filter(n => kind === 'all' ? n.kind !== 'story' : n.kind === kind).length;
+  renderStoryControls();
+  for (const kind of ['all', 'character', 'world', 'story', 'image']) $(kind + '-count').textContent = project.notes.filter(n => inStory(n) && (kind === 'all' ? n.kind !== 'story' : n.kind === kind)).length;
   const notes = visibleNotes();
   const storyView = filter === 'story';
   $('viewport').hidden = storyView; $('timeline').hidden = !storyView;
@@ -102,7 +122,9 @@ function renderBoard() {
     renderTimeline(notes); return;
   }
   $('empty').hidden = !!notes.length;
-  $('empty-description').textContent = project.notes.length ? 'No matching thoughts. Change your filters or add something new.' : 'Add a note or an image to plant your first idea.';
+  $('empty-description').textContent = storyScope && !project.notes.some(inStory)
+    ? 'Add something here, or assign an existing note from All stories.'
+    : project.notes.length ? 'No matching thoughts. Change your filters or add something new.' : 'Add a note or an image to plant your first idea.';
   $('note-summary').textContent = `${notes.length} ${notes.length === 1 ? 'thought' : 'thoughts'} · ${project.connections.filter(c => notes.some(n => n.id === c.from) && notes.some(n => n.id === c.to)).length} visible threads`;
   $('cards').replaceChildren();
   for (const n of notes) {
@@ -265,6 +287,25 @@ function renderInspector() {
   $('note-title').disabled = locked; $('note-body').disabled = locked; $('note-kind').disabled = locked || n.kind === 'image';
   $('note-kind').querySelector('[value="image"]').disabled = false;
   $('delete-note').disabled = locked; $('lock-message').hidden = !locked;
+  $('story-membership').hidden = !project.stories?.length;
+  $('note-stories').replaceChildren();
+  for (const story of project.stories || []) {
+    const label = element('label', 'story-choice');
+    const checkbox = element('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!n.storyIds?.includes(story.id);
+    checkbox.addEventListener('change', () => {
+      remember();
+      const memberships = new Set(n.storyIds);
+      if (checkbox.checked) memberships.add(story.id);
+      else memberships.delete(story.id);
+      M.updateNote(project, n.id, { storyIds: [...memberships] });
+      cancelConnect();
+      changed();
+    });
+    label.append(checkbox, element('span', '', story.title));
+    $('note-stories').append(label);
+  }
   $('swatches').replaceChildren();
   for (const color of M.colors) {
     const button = element('button', `${color}${n.color === color ? ' chosen' : ''}`); button.title = color; button.setAttribute('aria-label', color + ' paper'); button.setAttribute('aria-pressed', n.color === color);
@@ -279,7 +320,12 @@ function renderInspector() {
     const row = element('div', 'linked-row');
     const button = element('button', '', other.title || 'Untitled thought'); button.append(element('small', '', c.label + ' · ' + connectionSummary(c)));
     button.title = connectionSummary(c);
-    button.addEventListener('click', () => { setFilter(other.kind === 'story' ? 'story' : 'all'); $('search').value = ''; $('certainty-filter').value = 'all'; selected = other.id; renderBoard(); renderInspector(); centerNote(other); });
+    button.addEventListener('click', () => {
+      if (!inStory(other)) { storyScope = ''; toast('Showing All stories to open the linked note.'); }
+      $('search').value = ''; $('certainty-filter').value = 'all';
+      setFilter(other.kind === 'story' ? 'story' : 'all'); selected = other.id;
+      renderBoard(); renderInspector(); centerNote(other);
+    });
     const remove = element('button', '', '×'); remove.setAttribute('aria-label', 'Remove connection to ' + other.title);
     remove.addEventListener('click', () => { remember(); project.connections = project.connections.filter(link => link.id !== c.id); changed(); renderInspector(); });
     const edit = element('button', '', '✎'); edit.setAttribute('aria-label', 'Edit connection to ' + other.title);
@@ -357,6 +403,7 @@ function addNote(kind, point, image, title) {
   const x = ((point ? point.x - rect.left : rect.width / 2) - view.x) / view.zoom - 140;
   const y = ((point ? point.y - rect.top : rect.height / 2) - view.y) / view.zoom - 115;
   const note = { id: M.id(), title: title || '', body: '', kind, importance: 1, status: 'seed', color: ({ character: 'rose', world: 'sage', story: 'butter', image: 'paper' })[kind] || 'butter', x, y, ...(image ? { image } : {}), ...(kind === 'story' ? { beatStage: 'unplaced', beatOrder: project.notes.length } : {}) };
+  if (storyScope) note.storyIds = [storyScope];
   remember(); project.notes.push(note); selected = note.id; changed(); renderInspector(); centerNote(note); $('note-title').focus();
 }
 async function imageFile(file, point, noteId = null) {
@@ -444,6 +491,7 @@ function undo(redo = false) {
   const source = redo ? future : history, target = redo ? history : future;
   if (!source.length) { toast(redo ? 'Nothing to redo yet.' : 'Nothing to undo yet.'); return; }
   target.push(JSON.stringify(project)); project = JSON.parse(source.pop()); lastEditKey = ''; cancelConnect();
+  if (!project.stories?.some(story => story.id === storyScope)) storyScope = '';
   if (!project.notes.some(n => n.id === selected)) selected = null;
   changed(); renderInspector(); toast(redo ? 'Change restored.' : 'Last change undone.');
 }
@@ -460,7 +508,7 @@ async function replaceProject(input) {
   if (!await ask({ title: 'Open this scrapbook?', description: `“${incoming.title || 'Untitled comic'}” will replace the active project. Export the current project first if you want to keep a separate copy.`, confirm: 'Open project' })) return;
   remember(); project = incoming; resetView(); changed(); fit();
 }
-function resetView() { selected = null; $('search').value = ''; $('certainty-filter').value = 'all'; setFilter('all'); }
+function resetView() { storyScope = ''; selected = null; $('search').value = ''; $('certainty-filter').value = 'all'; setFilter('all'); }
 $('project-file').addEventListener('change', async () => {
   const file = $('project-file').files[0];
   try { if (file) { if (file.size > M.MAX_BYTES) throw new Error('Project is too large (maximum 40 MB).'); await replaceProject(JSON.parse(await file.text())); } }
@@ -483,6 +531,31 @@ $('project-name').addEventListener('click', async () => {
 });
 $('help').addEventListener('click', () => ask({ title: 'Make yourself at home', description: 'Drag a note to arrange it. Click it to write or change its importance and certainty.\n\nDrag the background or scroll to explore. Ctrl + scroll to zoom. F fits your notes. N adds a note. Esc closes the detail panel or cancels a connection.\n\nChoose Connect notes, then click the first note and the second. You can also select a note first and connect from its detail panel. Click a thread’s label to rename it.\n\nCtrl+Z undoes a change; Ctrl+Shift+Z redoes it. Drop images or text onto the board. Changes save automatically on this device. Export a project to keep a backup or move it elsewhere.\n\nCharacter sheets, map editing, and dedicated magic systems are planned for later.', confirm: 'Got it', cancel: 'Close' }));
 $('add-note').addEventListener('click', () => addNote());
+$('story-scope').addEventListener('change', event => setStoryScope(event.target.value));
+$('add-story').addEventListener('click', async () => {
+  const title = (await ask({ title: 'New story', description: 'Give this story a name. Add existing notes to it from their details.', input: true, confirm: 'Create story' }))?.trim();
+  if (!title) return;
+  remember();
+  const story = { id: M.id(), title };
+  (project.stories ||= []).push(story);
+  setStoryScope(story.id);
+  changed();
+});
+$('rename-story').addEventListener('click', async () => {
+  const story = project.stories.find(story => story.id === storyScope);
+  const title = (await ask({ title: 'Rename story', value: story.title, input: true }))?.trim();
+  if (!title || title === story.title) return;
+  remember(); story.title = title; changed(); renderInspector();
+});
+$('remove-story').addEventListener('click', async () => {
+  const id = storyScope;
+  if (!await ask({ title: 'Remove this story view?', description: 'Its notes and beats stay in the project and in any other stories that use them. You can undo this with Ctrl+Z.', confirm: 'Remove view' })) return;
+  remember();
+  project.stories = project.stories.filter(story => story.id !== id);
+  for (const note of project.notes) if (note.storyIds) note.storyIds = note.storyIds.filter(storyId => storyId !== id);
+  setStoryScope('');
+  changed();
+});
 $('add-image').addEventListener('click', () => { pendingImageNote = null; $('image-file').click(); });
 $('export').addEventListener('click', exportProject);
 $('connect').addEventListener('click', startConnect);

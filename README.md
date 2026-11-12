@@ -4,7 +4,7 @@ A local-first Windows scrapbook for brainstorming, worldbuilding, and writing co
 
 ## Try it
 
-Close any older Amanita window, then double-click **Open Amanita.cmd** in this project folder. It opens the latest build at **dist/timeline/Amanita-win32-x64/Amanita.exe**, using your existing saved project. A normal development package build is written to **dist/Amanita-win32-x64/Amanita.exe**. Keep the whole application folder together; the executable needs its companion files. This is a portable application build, not an installer.
+Close any older Amanita window, then double-click **Open Amanita.cmd** in this project folder. It opens the latest build at **dist/story-views/Amanita-win32-x64/Amanita.exe**, using your existing saved project. A normal development package build is written to **dist/Amanita-win32-x64/Amanita.exe**. Keep the whole application folder together; the executable needs its companion files. This is a portable application build, not an installer.
 
 For development, install Node.js and run:
 
@@ -18,6 +18,7 @@ A browser preview is also available with `npm run preview` at http://127.0.0.1:4
 ## In this edition
 
 - Drag post-its around a freeform scrapbook; pan, zoom, and fit your notes.
+- Use **New story** to create an optional story view. The sidebar picker scopes the scrapbook, category lists, and loose timeline. In a note's details, check any stories under **Appears in** to share that note across views. New notes and beats join the selected story automatically. **All stories** includes everything, even unassigned notes. Renaming or removing a view keeps its notes intact.
 - Write ideas, character notes, and world notes in a detail panel. Story beats live in a separate loose timeline, excluded from the scrapbook. Arrange beats under Early, Along the way, Later, or Unplaced with drag-and-drop, ordering arrows, or the detail panel. Existing beats migrate to Unplaced; placement and order save with the project.
 - Browse Image references from the sidebar. Attach PNG, JPEG, WebP, or GIF images with Add image, by dropping them onto the board, or by choosing Image reference on a regular note (8 MB per image). Converting a note preserves its title and text.
 - Choose paper colors independently of note category.
@@ -43,6 +44,7 @@ npm test
 npm run test:desktop
 npm run test:connections
 npm run test:timeline
+npm run test:story-views
 npm run package:win
 ```
 

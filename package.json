@@ -12,7 +12,8 @@
     "test:desktop": "electron tests/desktop-smoke.cjs",
     "test:connections": "node tests/connection-input.cjs",
     "test:images": "node tests/image-input.cjs",
-    "test:timeline": "node tests/timeline-input.cjs"
+    "test:timeline": "node tests/timeline-input.cjs",
+    "test:story-views": "node tests/story-views-input.cjs"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

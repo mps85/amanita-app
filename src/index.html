@@ -14,6 +14,15 @@
     <div class="brand"><span class="mushroom">♧</span> amanita<span class="alpha">EARLY EDITION</span></div>
     <div class="project-label">YOUR COMIC WORLD</div>
     <button id="project-name" class="project-name" title="Rename project"></button>
+    <section class="story-controls" aria-label="Story views">
+      <label for="story-scope" class="project-label">STORY VIEW</label>
+      <select id="story-scope"><option value="">All stories</option></select>
+      <div class="story-actions">
+        <button id="add-story" class="text-button">＋ New story</button>
+        <button id="rename-story" class="text-button" aria-label="Rename current story" hidden>Rename</button>
+        <button id="remove-story" class="text-button" aria-label="Remove current story view" hidden>Remove</button>
+      </div>
+    </section>
     <nav aria-label="Workspace">
       <button class="nav-item active" data-filter="all"><span>▧</span> Scrapbook <span class="count" id="all-count"></span></button>
       <button class="nav-item" data-filter="character"><span>♙</span> Characters <span class="count" id="character-count"></span></button>
@@ -54,7 +63,12 @@
     <div id="lock-message" hidden>◆ This rule is locked. Unlock it to revise its content.</div>
     <label>Title<input id="note-title" maxlength="150" placeholder="An untitled thought"></label>
     <label>Notes<textarea id="note-body" maxlength="20000" placeholder="What’s on your mind?"></textarea></label>
-    <label>Belongs to<select id="note-kind"><option value="idea">Ideas & questions</option><option value="character">Characters</option><option value="world">Worldbuilding</option><option value="story">Story beats</option><option value="image">Image reference</option></select></label>
+    <label>Category<select id="note-kind"><option value="idea">Ideas & questions</option><option value="character">Characters</option><option value="world">Worldbuilding</option><option value="story">Story beats</option><option value="image">Image reference</option></select></label>
+    <fieldset id="story-membership" hidden>
+      <legend class="field-heading">Appears in</legend>
+      <div id="note-stories"></div>
+      <p class="field-hint">Choose any stories that use this note. It’s always available in All stories.</p>
+    </fieldset>
     <label id="beat-placement" hidden>Timeline position<select id="beat-stage"><option value="unplaced">Unplaced · still finding its place</option><option value="early">Early · near the beginning</option><option value="middle">Along the way · somewhere in the middle</option><option value="late">Later · toward the end</option></select></label>
     <div class="field-heading">Paper color</div><div id="swatches"></div>
     <label>Importance<select id="note-importance"><option value="1">A little detail</option><option value="2">Worth developing</option><option value="3">Central to the story</option></select></label>

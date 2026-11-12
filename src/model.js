@@ -8,12 +8,22 @@
   const kinds = ['idea', 'character', 'world', 'story', 'image'];
   const directions = ['none', 'forward', 'reverse', 'both'];
   const beatStages = ['early', 'middle', 'late', 'unplaced'];
+  const MAX_STORIES = 200;
   const id = () => globalThis.crypto.randomUUID();
   function validate(input) {
     const fail = () => { throw new Error('This is not a valid Amanita project.'); };
     if (!input || input.version !== 1 || typeof input.title !== 'string' || input.title.length > 150 ||
       !Array.isArray(input.notes) || input.notes.length > 2000 || !Array.isArray(input.connections) || input.connections.length > 4000) fail();
     if (JSON.stringify(input).length > MAX_BYTES) throw new Error('Project is too large (maximum 40 MB).');
+    const storyIds = new Set();
+    const storyInput = input.stories === undefined ? [] : input.stories;
+    if (!Array.isArray(storyInput) || storyInput.length > MAX_STORIES) fail();
+    const stories = storyInput.map(story => {
+      if (!story || typeof story.id !== 'string' || !story.id || story.id.length > 100 || storyIds.has(story.id) ||
+        typeof story.title !== 'string' || !story.title.trim() || story.title.length > 150) fail();
+      storyIds.add(story.id);
+      return { id: story.id, title: story.title.trim() };
+    });
     const ids = new Set();
     const notes = input.notes.map((n, index) => {
       if (!n || typeof n.id !== 'string' || n.id.length > 100 || ids.has(n.id) ||
@@ -22,8 +32,11 @@
         ![1, 2, 3].includes(n.importance) || !Number.isFinite(n.x) || !Number.isFinite(n.y) || Math.abs(n.x) > 100000 || Math.abs(n.y) > 100000) fail();
       if (n.kind === 'image' && !(n.image === 'assets/forest.svg' || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(n.image || ''))) fail();
       if (n.kind === 'story' && ((n.beatStage !== undefined && !beatStages.includes(n.beatStage)) || (n.beatOrder !== undefined && (!Number.isInteger(n.beatOrder) || n.beatOrder < 0 || n.beatOrder > 100000)))) fail();
+      const memberships = n.storyIds === undefined ? [] : n.storyIds;
+      if (!Array.isArray(memberships) || memberships.length > stories.length ||
+        new Set(memberships).size !== memberships.length || [...memberships].some(id => !storyIds.has(id))) fail();
       ids.add(n.id);
-      return { id: n.id, title: n.title, body: n.body, color: n.color, status: n.status, kind: n.kind, importance: n.importance, x: n.x, y: n.y, ...(n.kind === 'image' ? { image: n.image } : {}), ...(n.kind === 'story' ? { beatStage: n.beatStage || 'unplaced', beatOrder: n.beatOrder ?? index } : {}) };
+      return { id: n.id, title: n.title, body: n.body, color: n.color, status: n.status, kind: n.kind, importance: n.importance, x: n.x, y: n.y, ...(n.kind === 'image' ? { image: n.image } : {}), ...(n.kind === 'story' ? { beatStage: n.beatStage || 'unplaced', beatOrder: n.beatOrder ?? index } : {}), ...(memberships.length ? { storyIds: [...memberships] } : {}) };
     });
     const connectionIds = new Set();
     const connections = input.connections.map(c => {
@@ -31,7 +44,7 @@
       if (c.direction !== undefined && !directions.includes(c.direction)) fail();
       connectionIds.add(c.id); return { id: c.id, from: c.from, to: c.to, label: c.label, direction: c.direction ?? 'none' };
     });
-    return { version: 1, title: input.title, notes, connections };
+    return { version: 1, title: input.title, notes, connections, ...(stories.length ? { stories } : {}) };
   }
   function updateNote(project, noteId, patch) {
     const note = project.notes.find(n => n.id === noteId);
@@ -60,5 +73,5 @@
       { id: 'c3', from: 'magic', to: 'question', label: 'raises a question', direction: 'none' },
     ] };
   }
-  return { MAX_BYTES, colors, statuses, kinds, directions, beatStages, id, validate, updateNote, removeNote, seed };
+  return { MAX_BYTES, MAX_STORIES, colors, statuses, kinds, directions, beatStages, id, validate, updateNote, removeNote, seed };
 });
