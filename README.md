@@ -4,7 +4,7 @@ A local-first Windows scrapbook for brainstorming, worldbuilding, and writing co
 
 ## Try it
 
-Close any older Amanita window, then double-click **Open Amanita.cmd** in this project folder. It opens the latest build at **dist/story-views/Amanita-win32-x64/Amanita.exe**, using your existing saved project. A normal development package build is written to **dist/Amanita-win32-x64/Amanita.exe**. Keep the whole application folder together; the executable needs its companion files. This is a portable application build, not an installer.
+Close any older Amanita window, then double-click **Open Amanita.cmd** in this project folder. It opens the latest build at **dist/note-connections/Amanita-win32-x64/Amanita.exe**, using your existing saved project. A normal development package build is written to **dist/Amanita-win32-x64/Amanita.exe**. Keep the whole application folder together; the executable needs its companion files. This is a portable application build, not an installer.
 
 For development, install Node.js and run:
 
@@ -19,12 +19,12 @@ A browser preview is also available with `npm run preview` at http://127.0.0.1:4
 
 - Drag post-its around a freeform scrapbook; pan, zoom, and fit your notes.
 - Use **New story** to create an optional story view. The sidebar picker scopes the scrapbook, category lists, and loose timeline. In a note's details, check any stories under **Appears in** to share that note across views. New notes and beats join the selected story automatically. **All stories** includes everything, even unassigned notes. Renaming or removing a view keeps its notes intact.
-- Write ideas, character notes, and world notes in a detail panel. Story beats live in a separate loose timeline, excluded from the scrapbook. Arrange beats under Early, Along the way, Later, or Unplaced with drag-and-drop, ordering arrows, or the detail panel. Existing beats migrate to Unplaced; placement and order save with the project.
+- Write ideas, character notes, and world notes in a detail panel. Story beats live in a separate loose timeline. Drag beats anywhere along the spectrum marked Early, Along the way, and Later, or move them into the separate Unplaced bucket. Use the arrows or the position slider for finer adjustments. Older projects keep their existing beat order and unplaced beats.
 - Browse Image references from the sidebar. Attach PNG, JPEG, WebP, or GIF images with Add image, by dropping them onto the board, or by choosing Image reference on a regular note (8 MB per image). Converting a note preserves its title and text.
 - Choose paper colors independently of note category.
 - Rate importance separately from certainty: seed, exploring, established, or locked rule.
 - Locked rules protect their title, content, category, and deletion until explicitly unlocked. Their position, color, importance, and connections remain adjustable.
-- Connect notes with editable labels and no direction, first-to-second, second-to-first, or both directions. Direction choices use note titles, shortened to five words with an ellipsis for longer titles. Arrowheads show direction on the canvas; edit through the thread label or the pencil beside a relationship in the detail panel. Older connections remain undirected.
+- Use **Connect to another note** to search by title or text and filter by category or story. The picker includes notes and beats outside the active view. Drag a card’s thread handle onto another visible card to connect them directly. Both methods let you label the relationship and choose its direction. Edit a connection from its canvas label or the pencil in the detail panel.
 - Filter by category or certainty and search titles and content.
 - Undo/redo board changes with Ctrl+Z / Ctrl+Shift+Z. Text fields retain standard text undo while focused.
 - Automatic local saving plus JSON import/export with embedded images (40 MB project limit).

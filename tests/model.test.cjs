@@ -83,3 +83,24 @@ test('shared note and beat memberships survive export and reject dangling or dup
   p.stories[1].id = 'one';
   assert.throws(() => M.validate(p));
 });
+
+test('legacy beat order maps onto the spectrum and fine positions persist', () => {
+  const p = M.seed();
+  const beat = p.notes.find(note => note.kind === 'story');
+  p.notes.push(
+    { ...beat, id: 'early-two', beatStage: 'early', beatOrder: 2 },
+    { ...beat, id: 'middle', beatStage: 'middle', beatOrder: 0 },
+    { ...beat, id: 'early-one', beatStage: 'early', beatOrder: 1 },
+    { ...beat, id: 'fine', beatStage: 'late', beatPosition: 0.731 }
+  );
+  const get = (project, id) => project.notes.find(note => note.id === id).beatPosition;
+  const migrated = M.validate(p);
+  assert.equal(get(migrated, 'scene'), undefined);
+  assert.ok(get(migrated, 'early-one') < get(migrated, 'early-two'));
+  assert.ok(get(migrated, 'early-two') < get(migrated, 'middle'));
+  assert.equal(get(M.validate(migrated), 'fine'), 0.731);
+  for (const position of [null, -0.001, 1.001, '0.5']) {
+    beat.beatPosition = position;
+    assert.throws(() => M.validate(p));
+  }
+});

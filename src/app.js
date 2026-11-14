@@ -9,6 +9,8 @@ let storyScope = '';
 let view = { x: 0, y: 0, zoom: 1 };
 let history = [], future = [], lastEdit = 0, lastEditKey = '', revision = 0;
 let toastTimer, dialogResolve, pendingImageNote = null;
+const connectionDragType = 'application/x-amanita-connection';
+let connectionDragSource = null, pickerSource = null, pickerTarget = null;
 const storageKey = 'amanita-project-v1';
 function element(tag, className, text) {
   const el = document.createElement(tag);
@@ -140,66 +142,133 @@ function renderBoard() {
     card.append(element('h2', '', n.title || 'An untitled thought'), element('p', 'note-body', n.body || 'A thought waiting to take shape…'));
     const status = element('div', 'note-status'); status.append(element('span', 'status-icon', statusIcons[n.status]), document.createTextNode(statusNames[n.status])); card.append(status);
     card.addEventListener('pointerdown', event => startNoteGesture(event, n.id));
-    card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); chooseNote(n.id); } });
+    card.addEventListener('keydown', event => { if (event.target === card && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); chooseNote(n.id); } });
+    addConnectionHandle(card, n);
     $('cards').append(card);
   }
   drawConnections();
   updateTransform();
 }
-const beatStageNames = { early: 'Early', middle: 'Along the way', late: 'Later', unplaced: 'Unplaced' };
 let draggedBeat = null;
-function moveBeat(id, stage, beforeId = null) {
+function placeBeat(id, position) {
   const beat = project.notes.find(n => n.id === id);
-  if (!beat || beat.kind !== 'story' || !M.beatStages.includes(stage) || beforeId === id) return;
-  const ordered = project.notes.filter(n => n.kind === 'story' && (n.beatStage || 'unplaced') === stage && n.id !== id)
-    .sort((a,b) => (a.beatOrder ?? project.notes.indexOf(a)) - (b.beatOrder ?? project.notes.indexOf(b)));
-  const before = ordered.findIndex(n => n.id === beforeId);
-  ordered.splice(before < 0 ? ordered.length : before, 0, beat);
-  remember(); beat.beatStage = stage;
-  ordered.forEach((n,index) => n.beatOrder = index);
+  if (!beat || beat.kind !== 'story' || (beat.beatPosition ?? null) === position) return;
+  remember();
+  if (position === null) delete beat.beatPosition;
+  else beat.beatPosition = position;
+  beat.beatStage = position === null ? 'unplaced' : position < 1/3 ? 'early' : position < 2/3 ? 'middle' : 'late';
   changed(); renderInspector();
 }
-function renderTimeline(notes) {
-  $('timeline').replaceChildren();
-  const hint = element('div', 'timeline-intro', 'An approximate sequence, not a commitment. Drag beats into place or use the arrows.');
-  $('timeline').append(hint);
-  const lanes = element('div', 'timeline-lanes');
-  for (const stage of M.beatStages) {
-    const beats = notes.filter(n => (n.beatStage || 'unplaced') === stage)
-      .sort((a,b) => (a.beatOrder ?? project.notes.indexOf(a)) - (b.beatOrder ?? project.notes.indexOf(b)));
-    const lane = element('section', 'timeline-lane ' + stage); lane.dataset.stage = stage;
-    lane.setAttribute('aria-label', beatStageNames[stage] + ' beats');
-    const heading = element('div', 'lane-heading');
-    heading.append(element('h2', '', beatStageNames[stage]), element('span', '', String(beats.length)));
-    lane.append(heading, element('p','lane-description', { early: 'Where things begin', middle: 'What happens along the way', late: 'Where things might lead', unplaced: 'Good moments. No place yet.' }[stage]));
-    lane.addEventListener('dragover', e => { if (draggedBeat) { e.preventDefault(); lane.classList.add('drop-ready'); } });
-    lane.addEventListener('dragleave', e => { if (!lane.contains(e.relatedTarget)) lane.classList.remove('drop-ready'); });
-    lane.addEventListener('drop', e => { if (draggedBeat) { e.preventDefault(); moveBeat(draggedBeat, stage); draggedBeat = null; } });
-    for (const [index,n] of beats.entries()) {
-      const card = element('article', 'beat-card ' + n.color + (selected === n.id ? ' selected' : '') + (connecting && connectFrom !== n.id ? ' connect-target' : ''));
-      card.dataset.id = n.id; card.draggable = true;
-      const open = element('button','beat-open'); open.setAttribute('aria-label','Edit beat: ' + (n.title || 'Untitled beat'));
-      open.append(element('span','beat-status',statusIcons[n.status] + ' ' + statusNames[n.status]), element('h3','',n.title || 'An untitled beat'),element('p','',n.body || 'A moment waiting to happen…'));
-      open.addEventListener('click', () => void chooseNote(n.id));
-      card.append(open);
-      const controls = element('div','beat-controls');
-      controls.append(element('span','',stage === 'unplaced' ? 'Not placed yet' : 'Beat ' + (index + 1)));
-      const earlier = element('button','','↑'); earlier.setAttribute('aria-label','Move ' + (n.title || 'beat') + ' earlier'); earlier.disabled = index === 0;
-      earlier.addEventListener('click', () => moveBeat(n.id,stage,beats[index-1].id));
-      const later = element('button','','↓'); later.setAttribute('aria-label','Move ' + (n.title || 'beat') + ' later'); later.disabled = index === beats.length-1;
-      later.addEventListener('click', () => moveBeat(n.id,stage,beats[index+2]?.id));
-      controls.append(earlier,later); card.append(controls);
-      card.addEventListener('dragstart', e => { draggedBeat=n.id; e.dataTransfer.setData('text/plain',n.id); e.dataTransfer.effectAllowed='move'; });
-      card.addEventListener('dragend', () => { draggedBeat=null; for(const el of document.querySelectorAll('.drop-ready'))el.classList.remove('drop-ready'); });
-      card.addEventListener('drop', e => { if(draggedBeat) { e.preventDefault(); e.stopPropagation(); moveBeat(draggedBeat,stage,n.id); draggedBeat=null; } });
-      lane.append(card);
+function beatCard(note, index) {
+  const placed = note.beatPosition !== undefined;
+  const card = element('article', 'beat-card ' + note.color + (selected === note.id ? ' selected' : '') + (connecting && connectFrom !== note.id ? ' connect-target' : ''));
+  card.dataset.id = note.id;
+  card.draggable = true;
+  const title = note.title || 'Untitled beat';
+  const open = element('button', 'beat-open');
+  open.setAttribute('aria-label', 'Edit beat: ' + title);
+  open.append(element('span', 'beat-status', statusIcons[note.status] + ' ' + statusNames[note.status]),
+    element('h3', '', title), element('p', '', note.body || 'A moment waiting to happen…'));
+  open.addEventListener('click', () => void chooseNote(note.id));
+  const controls = element('div', 'beat-controls');
+  controls.append(element('span', '', placed ? 'Beat ' + (index + 1) : 'Not placed yet'));
+  if (placed) {
+    for (const [step, verb, arrow] of [[-1, 'earlier', '←'], [1, 'later', '→']]) {
+      const button = element('button', '', arrow);
+      button.dataset.nudge = verb;
+      button.setAttribute('aria-label', 'Move ' + title + ' ' + verb);
+      button.disabled = step < 0 ? note.beatPosition === 0 : note.beatPosition === 1;
+      button.addEventListener('click', () => {
+        placeBeat(note.id, Math.max(0, Math.min(1000, Math.round(note.beatPosition * 1000) + step * 25)) / 1000);
+        const next = [...$('timeline').querySelectorAll('.beat-card')].find(card => card.dataset.id === note.id);
+        (next?.querySelector('[data-nudge="' + verb + '"]:not(:disabled)') || next?.querySelector('.beat-open'))?.focus({ preventScroll: true });
+      });
+      controls.append(button);
     }
-    if (!beats.length) lane.append(element('p','lane-empty',notes.length ? 'Drop a beat here' : 'No beats here yet'));
-    lanes.append(lane);
   }
-  $('timeline').append(lanes);
+  card.append(open, controls);
+  card.addEventListener('dragstart', event => {
+    draggedBeat = note.id;
+    event.dataTransfer.setData('application/x-amanita-beat', note.id);
+    event.dataTransfer.effectAllowed = 'move';
+  });
+  card.addEventListener('dragend', () => {
+    draggedBeat = null;
+    for (const zone of $('timeline').querySelectorAll('.drop-ready')) zone.classList.remove('drop-ready');
+  });
+  addConnectionHandle(card, note);
+  return card;
 }
-$('beat-stage').addEventListener('change', () => { if(selected) moveBeat(selected,$('beat-stage').value); });
+function beatDropZone(zone, getPosition, preview = () => {}) {
+  zone.addEventListener('dragover', event => {
+    if (!draggedBeat) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    preview(event);
+    zone.classList.add('drop-ready');
+  });
+  zone.addEventListener('dragleave', event => {
+    if (!zone.contains(event.relatedTarget)) zone.classList.remove('drop-ready');
+  });
+  zone.addEventListener('drop', event => {
+    if (!draggedBeat) return;
+    event.preventDefault();
+    const id = draggedBeat;
+    draggedBeat = null;
+    zone.classList.remove('drop-ready');
+    placeBeat(id, getPosition(event));
+  });
+}
+function renderTimeline(notes) {
+  const placed = notes.filter(n => n.beatPosition !== undefined).sort((a,b) => a.beatPosition - b.beatPosition || (a.beatOrder ?? 0) - (b.beatOrder ?? 0));
+  const unplaced = notes.filter(n => n.beatPosition === undefined).sort((a,b) => (a.beatOrder ?? 0) - (b.beatOrder ?? 0));
+  const hint = element('p', 'timeline-intro', 'Drag a beat anywhere from Early to Later. Leave space for a pause, or group beats that happen close together.');
+  const track = element('section', 'beat-track');
+  track.setAttribute('aria-label', 'Timeline spectrum');
+  const axis = element('div', 'beat-axis');
+  track.append(axis);
+  for (const [stage, title] of [['early', 'Early'], ['middle', 'Along the way'], ['late', 'Later']]) {
+    const label = element('span', 'beat-landmark', title);
+    label.style.left = M.beatLandmarks[stage] * 100 + '%';
+    axis.append(label);
+  }
+  const cursor = element('div', 'beat-drop-cursor');
+  axis.append(cursor);
+  // Stack nearby cards without moving their pins along the timeline.
+  const rows = [];
+  placed.forEach((note, index) => {
+    let row = rows.findIndex(last => note.beatPosition - last >= 0.24);
+    if (row < 0) row = rows.length;
+    rows[row] = note.beatPosition;
+    const slot = element('div', 'beat-slot');
+    slot.style.left = note.beatPosition * 100 + '%';
+    slot.style.setProperty('--row', row);
+    slot.append(element('div', 'beat-stem'), beatCard(note, index));
+    axis.append(slot);
+  });
+  track.style.setProperty('--rows', Math.max(1, rows.length));
+  if (!placed.length) track.append(element('p', 'beat-empty', 'Drop a beat anywhere along the timeline.'));
+  function positionAt(event) {
+    const rect = axis.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * 1000) / 1000;
+  }
+  beatDropZone(track, positionAt, event => { cursor.style.left = positionAt(event) * 100 + '%'; });
+  const bucket = element('section', 'beat-bucket');
+  const heading = element('div', 'lane-heading');
+  heading.append(element('h2', '', 'Unplaced'), element('span', '', String(unplaced.length)));
+  bucket.setAttribute('aria-label', 'Unplaced beats');
+  bucket.append(heading, element('p', 'lane-description', 'Drag a beat here to take it off the timeline.'));
+  const cards = element('div', 'beat-bucket-cards');
+  for (const note of unplaced) cards.append(beatCard(note));
+  bucket.append(cards);
+  beatDropZone(bucket, () => null);
+  $('timeline').replaceChildren(hint, bucket, track);
+}
+$('beat-position').addEventListener('change', event => { if (selected) placeBeat(selected, Number(event.target.value) / 1000); });
+$('toggle-beat-placement').addEventListener('click', () => {
+  const note = project.notes.find(n => n.id === selected);
+  if (note?.kind === 'story') placeBeat(note.id, note.beatPosition === undefined ? M.beatLandmarks.middle : null);
+});
 function svg(tag, attributes) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [key, value] of Object.entries(attributes)) el.setAttribute(key, value);
@@ -268,9 +337,7 @@ async function chooseNote(id) {
     const source = connectFrom;
     if (source === id) { toast('Choose a different note to connect.'); return; }
     cancelConnect(); renderBoard();
-    const result = await ask({ title: 'Follow a thread', description: 'Name the relationship and choose its direction.', input: true, value: 'connected to', maxLength: 100, confirm: 'Connect', connection: { from: source, to: id, direction: 'none' } });
-    if (result === null) { renderInspector(); return; }
-    remember(); project.connections.push({ id: M.id(), from: source, to: id, label: result.label.trim() || 'connected to', direction: result.direction }); changed(); renderInspector(); return;
+    await createConnection(source, id); return;
   }
   selected = id; renderInspector(); renderBoard();
 }
@@ -279,7 +346,10 @@ function renderInspector() {
   $('inspector').hidden = !n;
   if (!n) return;
   $('beat-placement').hidden = n.kind !== 'story';
-  $('beat-stage').value = n.beatStage || 'unplaced';
+  $('beat-position').value = Math.round((n.beatPosition ?? M.beatLandmarks.middle) * 1000);
+  $('beat-position').disabled = n.beatPosition === undefined;
+  $('beat-position-hint').textContent = n.beatPosition === undefined ? 'This beat is in Unplaced.' : 'Move the slider or use its arrow keys to adjust the position.';
+  $('toggle-beat-placement').textContent = n.beatPosition === undefined ? 'Place on timeline' : 'Move to Unplaced';
   $('inspector-label').textContent = names[n.kind].toUpperCase() + ' DETAILS';
   $('note-title').value = n.title; $('note-body').value = n.body;
   $('note-kind').value = n.kind; $('note-importance').value = n.importance; $('note-status').value = n.status;
@@ -349,7 +419,7 @@ function setFilter(kind) {
   renderBoard(); fit();
 }
 function startNoteGesture(event, id) {
-  if (event.button !== 0) return;
+  if (event.button !== 0 || event.target.closest('.connection-handle')) return;
   event.stopPropagation(); event.preventDefault();
   if (connecting) { void chooseNote(id); return; }
   const n = project.notes.find(n => n.id === id);
@@ -454,6 +524,89 @@ function startConnect() {
   $('connect').classList.add('active'); $('connect').textContent = '× Cancel connection';
   updateConnectTip(); renderBoard(); fit();
 }
+async function createConnection(from, to) {
+  if (from === to || !project.notes.some(n => n.id === from) || !project.notes.some(n => n.id === to)) return;
+  const result = await ask({ title: 'Follow a thread', description: 'Name the relationship and choose its direction.', input: true, value: 'connected to', maxLength: 100, confirm: 'Connect', connection: { from, to, direction: 'none' } });
+  if (result !== null) {
+    remember();
+    project.connections.push({ id: M.id(), from, to, label: result.label.trim() || 'connected to', direction: result.direction });
+    changed();
+  }
+  renderInspector();
+}
+function openConnectionPicker(id) {
+  const note = project.notes.find(n => n.id === id);
+  if (!note || $('connection-picker').open || $('dialog').open) return;
+  pickerSource = id; pickerTarget = null;
+  $('connection-picker-source').textContent = 'From: ' + (note.title || 'Untitled thought');
+  $('connection-search').value = '';
+  $('connection-category').replaceChildren(new Option('All categories', ''), ...M.kinds.map(kind => new Option(names[kind], kind)));
+  $('connection-story').replaceChildren(new Option('All stories', ''), ...(project.stories || []).map(story => new Option(story.title, story.id)));
+  renderConnectionResults();
+  $('connection-picker').showModal();
+  $('connection-search').focus();
+}
+function renderConnectionResults() {
+  const query = $('connection-search').value.trim().toLowerCase();
+  const category = $('connection-category').value, story = $('connection-story').value;
+  const matches = project.notes.filter(note => note.id !== pickerSource &&
+    (!category || note.kind === category) && (!story || note.storyIds?.includes(story)) &&
+    (!query || (note.title + ' ' + note.body).toLowerCase().includes(query)));
+  matches.sort((a, b) => a.title.localeCompare(b.title));
+  $('connection-results-count').textContent = matches.length ? matches.length + (matches.length === 1 ? ' matching note' : ' matching notes') : 'No matching notes. Try changing the filters.';
+  $('connection-results').replaceChildren(...matches.map(note => {
+    const row = element('li');
+    const button = element('button', 'connection-result', note.title || 'Untitled thought');
+    const stories = (project.stories || []).filter(story => note.storyIds?.includes(story.id)).map(story => story.title);
+    button.append(element('small', '', [names[note.kind], ...stories].join(' · ')));
+    button.addEventListener('click', () => { pickerTarget = note.id; $('connection-picker').close(); });
+    row.append(button);
+    return row;
+  }));
+}
+$('connection-search').addEventListener('input', renderConnectionResults);
+$('connection-category').addEventListener('change', renderConnectionResults);
+$('connection-story').addEventListener('change', renderConnectionResults);
+$('connection-picker').addEventListener('close', () => {
+  const from = pickerSource, to = pickerTarget;
+  pickerSource = pickerTarget = null;
+  if (to) void createConnection(from, to);
+});
+function addConnectionHandle(card, note) {
+  const handle = element('button', 'connection-handle', '⌁');
+  handle.draggable = true;
+  handle.title = 'Drag onto another card to connect, or click to find a note';
+  handle.setAttribute('aria-label', 'Connect from ' + (note.title || 'Untitled thought'));
+  handle.addEventListener('click', () => openConnectionPicker(note.id));
+  handle.addEventListener('dragstart', event => {
+    event.stopPropagation();
+    connectionDragSource = note.id;
+    event.dataTransfer.setData(connectionDragType, note.id);
+    event.dataTransfer.effectAllowed = 'link';
+  });
+  handle.addEventListener('dragend', () => {
+    connectionDragSource = null;
+    for (const target of document.querySelectorAll('.connection-drop-target')) target.classList.remove('connection-drop-target');
+  });
+  card.addEventListener('dragover', event => {
+    if (!connectionDragSource || connectionDragSource === note.id || !event.dataTransfer.types.includes(connectionDragType)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'link';
+    card.classList.add('connection-drop-target');
+  });
+  card.addEventListener('dragleave', event => {
+    if (!card.contains(event.relatedTarget)) card.classList.remove('connection-drop-target');
+  });
+  card.addEventListener('drop', event => {
+    if (!connectionDragSource || connectionDragSource === note.id || event.dataTransfer.getData(connectionDragType) !== connectionDragSource) return;
+    event.preventDefault();
+    event.stopPropagation();
+    card.classList.remove('connection-drop-target');
+    void createConnection(connectionDragSource, note.id);
+  });
+  card.append(handle);
+}
 function connectionSummary(c) {
   const first = project.notes.find(n => n.id === c.from)?.title || 'Untitled thought';
   const second = project.notes.find(n => n.id === c.to)?.title || 'Untitled thought';
@@ -529,7 +682,7 @@ $('project-name').addEventListener('click', async () => {
   const name = await ask({ title: 'Name your comic world', input: true, value: project.title });
   if (name !== null) { remember(); project.title = name.trim() || 'Untitled comic'; changed(); }
 });
-$('help').addEventListener('click', () => ask({ title: 'Make yourself at home', description: 'Drag a note to arrange it. Click it to write or change its importance and certainty.\n\nDrag the background or scroll to explore. Ctrl + scroll to zoom. F fits your notes. N adds a note. Esc closes the detail panel or cancels a connection.\n\nChoose Connect notes, then click the first note and the second. You can also select a note first and connect from its detail panel. Click a thread’s label to rename it.\n\nCtrl+Z undoes a change; Ctrl+Shift+Z redoes it. Drop images or text onto the board. Changes save automatically on this device. Export a project to keep a backup or move it elsewhere.\n\nCharacter sheets, map editing, and dedicated magic systems are planned for later.', confirm: 'Got it', cancel: 'Close' }));
+$('help').addEventListener('click', () => ask({ title: 'Make yourself at home', description: 'Drag a note to arrange it. Click it to write or change its importance and certainty.\n\nDrag the background or scroll to explore. Ctrl + scroll to zoom. F fits your notes. N adds a note. Esc closes the detail panel or cancels a connection.\n\nChoose Connect notes, then click the first note and the second. Use Connect to another note in the details to search across categories and stories. You can also drag a card’s thread handle onto another card. Click a thread’s label to rename it.\n\nCtrl+Z undoes a change; Ctrl+Shift+Z redoes it. Drop images or text onto the board. Changes save automatically on this device. Export a project to keep a backup or move it elsewhere.\n\nCharacter sheets, map editing, and dedicated magic systems are planned for later.', confirm: 'Got it', cancel: 'Close' }));
 $('add-note').addEventListener('click', () => addNote());
 $('story-scope').addEventListener('change', event => setStoryScope(event.target.value));
 $('add-story').addEventListener('click', async () => {
@@ -559,7 +712,7 @@ $('remove-story').addEventListener('click', async () => {
 $('add-image').addEventListener('click', () => { pendingImageNote = null; $('image-file').click(); });
 $('export').addEventListener('click', exportProject);
 $('connect').addEventListener('click', startConnect);
-$('connect-selected').addEventListener('click', startConnect);
+$('connect-selected').addEventListener('click', () => openConnectionPicker(selected));
 $('close-inspector').addEventListener('click', () => { cancelConnect(); closeInspector(); });
 $('fit').addEventListener('click', fit);
 $('zoom-in').addEventListener('click', () => zoom(1.15));
@@ -568,7 +721,7 @@ $('search').addEventListener('input', () => { cancelConnect(); renderBoard(); fi
 $('certainty-filter').addEventListener('change', () => { cancelConnect(); renderBoard(); fit(); });
 for (const button of document.querySelectorAll('[data-filter]')) button.addEventListener('click', () => setFilter(button.dataset.filter));
 window.addEventListener('keydown', event => {
-  if ($('dialog').open) return;
+  if ($('dialog').open || $('connection-picker').open) return;
   if (event.target.matches('input, textarea, select')) { if (event.key === 'Escape') { cancelConnect(); closeInspector(); } return; }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(event.shiftKey); }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); }

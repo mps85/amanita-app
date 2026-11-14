@@ -8,6 +8,7 @@
   const kinds = ['idea', 'character', 'world', 'story', 'image'];
   const directions = ['none', 'forward', 'reverse', 'both'];
   const beatStages = ['early', 'middle', 'late', 'unplaced'];
+  const beatLandmarks = { early: 0.08, middle: 0.5, late: 0.92 };
   const MAX_STORIES = 200;
   const id = () => globalThis.crypto.randomUUID();
   function validate(input) {
@@ -32,12 +33,20 @@
         ![1, 2, 3].includes(n.importance) || !Number.isFinite(n.x) || !Number.isFinite(n.y) || Math.abs(n.x) > 100000 || Math.abs(n.y) > 100000) fail();
       if (n.kind === 'image' && !(n.image === 'assets/forest.svg' || /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(n.image || ''))) fail();
       if (n.kind === 'story' && ((n.beatStage !== undefined && !beatStages.includes(n.beatStage)) || (n.beatOrder !== undefined && (!Number.isInteger(n.beatOrder) || n.beatOrder < 0 || n.beatOrder > 100000)))) fail();
+      if (n.kind === 'story' && n.beatPosition !== undefined && (!Number.isFinite(n.beatPosition) || n.beatPosition < 0 || n.beatPosition > 1)) fail();
       const memberships = n.storyIds === undefined ? [] : n.storyIds;
       if (!Array.isArray(memberships) || memberships.length > stories.length ||
         new Set(memberships).size !== memberships.length || [...memberships].some(id => !storyIds.has(id))) fail();
       ids.add(n.id);
-      return { id: n.id, title: n.title, body: n.body, color: n.color, status: n.status, kind: n.kind, importance: n.importance, x: n.x, y: n.y, ...(n.kind === 'image' ? { image: n.image } : {}), ...(n.kind === 'story' ? { beatStage: n.beatStage || 'unplaced', beatOrder: n.beatOrder ?? index } : {}), ...(memberships.length ? { storyIds: [...memberships] } : {}) };
+      return { id: n.id, title: n.title, body: n.body, color: n.color, status: n.status, kind: n.kind, importance: n.importance, x: n.x, y: n.y, ...(n.kind === 'image' ? { image: n.image } : {}), ...(n.kind === 'story' ? { beatStage: n.beatStage || 'unplaced', beatOrder: n.beatOrder ?? index, ...(n.beatPosition !== undefined ? { beatPosition: n.beatPosition } : {}) } : {}), ...(memberships.length ? { storyIds: [...memberships] } : {}) };
     });
+    for (const [stage, index] of [['early', 0], ['middle', 1], ['late', 2]]) {
+      const legacy = notes.filter(n => n.kind === 'story' && n.beatStage === stage && n.beatPosition === undefined)
+        .sort((a, b) => a.beatOrder - b.beatOrder);
+      legacy.forEach((n, i) => {
+        n.beatPosition = legacy.length === 1 ? beatLandmarks[stage] : (index + (i + 1) / (legacy.length + 1)) / 3;
+      });
+    }
     const connectionIds = new Set();
     const connections = input.connections.map(c => {
       if (!c || typeof c.id !== 'string' || c.id.length > 100 || connectionIds.has(c.id) || !ids.has(c.from) || !ids.has(c.to) || c.from === c.to || typeof c.label !== 'string' || c.label.length > 100) fail();
@@ -73,5 +82,5 @@
       { id: 'c3', from: 'magic', to: 'question', label: 'raises a question', direction: 'none' },
     ] };
   }
-  return { MAX_BYTES, MAX_STORIES, colors, statuses, kinds, directions, beatStages, id, validate, updateNote, removeNote, seed };
+  return { MAX_BYTES, MAX_STORIES, colors, statuses, kinds, directions, beatStages, beatLandmarks, id, validate, updateNote, removeNote, seed };
 });

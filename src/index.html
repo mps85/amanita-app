@@ -69,7 +69,12 @@
       <div id="note-stories"></div>
       <p class="field-hint">Choose any stories that use this note. It’s always available in All stories.</p>
     </fieldset>
-    <label id="beat-placement" hidden>Timeline position<select id="beat-stage"><option value="unplaced">Unplaced · still finding its place</option><option value="early">Early · near the beginning</option><option value="middle">Along the way · somewhere in the middle</option><option value="late">Later · toward the end</option></select></label>
+    <div id="beat-placement" hidden>
+      <label for="beat-position">Timeline position</label>
+      <input id="beat-position" type="range" min="0" max="1000" aria-describedby="beat-position-hint">
+      <p class="field-hint" id="beat-position-hint"></p>
+      <button id="toggle-beat-placement" class="button secondary" type="button"></button>
+    </div>
     <div class="field-heading">Paper color</div><div id="swatches"></div>
     <label>Importance<select id="note-importance"><option value="1">A little detail</option><option value="2">Worth developing</option><option value="3">Central to the story</option></select></label>
     <label>Certainty<select id="note-status"><option value="seed">Seed · just an idea</option><option value="exploring">Exploring · working it out</option><option value="established">Established · part of the world</option><option value="locked">Locked rule · protect this detail</option></select></label>
@@ -79,6 +84,19 @@
     <button id="delete-note" class="delete-button">Delete this note</button>
   </aside>
   <dialog id="dialog"><form method="dialog" id="dialog-form"><div class="eyebrow" id="dialog-eyebrow">AMANITA</div><h2 id="dialog-title"></h2><p id="dialog-description"></p><input id="dialog-input" maxlength="150" aria-label="Value"><div id="connection-fields" hidden><div id="connection-endpoints"></div><label for="connection-direction">Direction</label><select id="connection-direction"><option value="none">— No direction</option><option value="forward">→ First note to second note</option><option value="reverse">← Second note to first note</option><option value="both">↔ Both directions</option></select></div><div class="dialog-actions"><button type="button" class="button secondary" id="dialog-cancel">Cancel</button><button value="confirm" class="button primary" id="dialog-confirm">Save</button></div></form></dialog>
+  <dialog id="connection-picker" aria-labelledby="connection-picker-title">
+    <div class="eyebrow">AMANITA</div>
+    <h2 id="connection-picker-title">Connect to another note</h2>
+    <p id="connection-picker-source"></p>
+    <div class="connection-filters">
+      <label>Search notes<input id="connection-search" type="search" placeholder="Title or notes…"></label>
+      <label>Category<select id="connection-category"></select></label>
+      <label>Story<select id="connection-story"></select></label>
+    </div>
+    <p id="connection-results-count" role="status"></p>
+    <ul id="connection-results"></ul>
+    <form method="dialog" class="dialog-actions"><button class="button secondary">Cancel</button></form>
+  </dialog>
   <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
   <input id="project-file" type="file" accept=".json" hidden>
   <div id="toast" role="status" hidden></div>

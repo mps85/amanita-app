@@ -1,2 +1,2 @@
 @echo off
-start "" "%~dp0dist\story-views\Amanita-win32-x64\Amanita.exe"
+start "" "%~dp0dist\note-connections\Amanita-win32-x64\Amanita.exe"

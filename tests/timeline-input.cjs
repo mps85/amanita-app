@@ -1,52 +1,64 @@
-const {_electron}=require('playwright');
-const assert=require('node:assert/strict');
-(async()=>{
- const app=await _electron.launch({executablePath:require('electron'),args:['tests/connection-fixture.cjs']});
- try{
-  const page=await app.firstWindow();
-  await page.waitForSelector('.note');
-  assert.equal(await page.locator('.note[data-id="scene"]').count(),0,'beats do not clutter scrapbook');
-  assert.equal(await page.locator('#all-count').innerText(),'6');
-  await page.locator('[data-filter="story"]').click();
-  assert.equal(await page.locator('#timeline').isVisible(),true);
-  assert.equal(await page.locator('#viewport').isVisible(),false);
-  assert.equal(await page.locator('.timeline-lane.unplaced .beat-card').count(),1);
-  await page.locator('.beat-card[data-id="scene"]').dragTo(page.locator('.timeline-lane.early .lane-empty'));
-  await page.waitForFunction(()=>project.notes.find(n=>n.id==='scene').beatStage==='early');
-  await page.locator('#add-note').click();
-  await page.locator('#note-title').fill('A second moment');
-  await page.locator('#note-body').fill('Something happens, somewhere along the way.');
-  const secondId=await page.evaluate(()=>selected);
-  await page.locator('#beat-stage').selectOption('early');
-  await page.locator('#close-inspector').click();
-  const secondCard=page.locator('.beat-card[data-id="'+secondId+'"]');
-  await secondCard.getByRole('button',{name:'Move A second moment earlier',exact:true}).click();
-  assert.deepEqual(await page.locator('.timeline-lane.early .beat-card').evaluateAll(nodes=>nodes.map(n=>n.dataset.id)),[secondId,'scene']);
-  await secondCard.getByRole('button',{name:'Move A second moment later',exact:true}).click();
-  assert.deepEqual(await page.locator('.timeline-lane.early .beat-card').evaluateAll(nodes=>nodes.map(n=>n.dataset.id)),['scene',secondId]);
-  await secondCard.dragTo(page.locator('.timeline-lane.late .lane-empty'));
-  await page.waitForFunction(id=>project.notes.find(n=>n.id===id).beatStage==='late',secondId);
-  await secondCard.getByRole('button',{name:'Edit beat: A second moment',exact:true}).click();
-  await page.locator('#beat-stage').selectOption('unplaced');
-  assert.equal(await page.locator('.timeline-lane.unplaced .beat-card').count(),1);
-  await page.locator('#close-inspector').click();
-  await page.keyboard.press('Control+z');
-  assert.equal(await page.evaluate(id=>project.notes.find(n=>n.id===id).beatStage,secondId),'late');
-  await page.keyboard.press('Control+Shift+z');
-  assert.equal(await page.evaluate(id=>project.notes.find(n=>n.id===id).beatStage,secondId),'unplaced');
-  await page.locator('#search').fill('second');
-  assert.equal(await page.locator('.beat-card').count(),1);
-  await page.locator('#search').fill('');
-  await page.evaluate(()=>save());
-  await page.reload();
-  await page.waitForSelector('.note');
-  await page.locator('[data-filter="story"]').click();
-  assert.equal(await page.locator('.timeline-lane.early .beat-card').count(),1);
-  assert.equal(await page.locator('.timeline-lane.unplaced .beat-card').count(),1);
-  await page.locator('[data-filter="all"]').click();
-  assert.equal(await page.locator('.note[data-id="'+secondId+'"]').count(),0);
-  await page.locator('[data-filter="story"]').click();
-  await page.screenshot({path:'docs/story-timeline.png'});
-  console.log('Timeline regression passed: scrapbook exclusion, old beat placement, drag/drop, ordering, editing, undo/redo, search, native save/reload.');
- }finally{await app.close();}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+const { _electron } = require('playwright');
+const assert = require('node:assert/strict');
+
+(async () => {
+  const app = await _electron.launch({ executablePath: require('electron'), args: ['tests/connection-fixture.cjs'] });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForSelector('.note');
+    assert.equal(await page.locator('.note[data-id="scene"]').count(), 0);
+    const timeline = page.getByRole('region', { name: 'Timeline spectrum' });
+    const unplaced = page.getByRole('region', { name: 'Unplaced beats' });
+    const scene = page.locator('.beat-card[data-id="scene"]');
+    await page.locator('[data-filter="story"]').click();
+    await unplaced.locator(scene).waitFor();
+    assert.deepEqual(await timeline.locator('.beat-landmark').allTextContents(), ['Early', 'Along the way', 'Later']);
+
+    async function dragToPosition(card, position) {
+      await timeline.scrollIntoViewIfNeeded();
+      const axis = await timeline.locator('.beat-axis').boundingBox();
+      const track = await timeline.boundingBox();
+      await card.dragTo(timeline, { targetPosition: { x: axis.x - track.x + axis.width * position, y: axis.y - track.y + 8 } });
+    }
+    const position = id => page.evaluate(id => project.notes.find(note => note.id === id).beatPosition, id);
+    await dragToPosition(scene, 0.31);
+    assert.ok(Math.abs(await position('scene') - 0.31) < 0.01);
+    await dragToPosition(scene, 0.38);
+    const moved = await position('scene');
+    assert.ok(Math.abs(moved - 0.38) < 0.01);
+    await scene.getByRole('button', { name: 'Move An opening scene later' }).click();
+    assert.ok(Math.abs(await position('scene') - moved - 0.025) < 0.001);
+
+    await page.locator('#add-note').click();
+    await page.locator('#note-title').fill('Another moment');
+    await page.locator('#toggle-beat-placement').click();
+    const second = await page.evaluate(() => selected);
+    await page.locator('#beat-position').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await position(second), 0.501);
+    await page.locator('#close-inspector').click();
+    const secondCard = page.locator('.beat-card[data-id="' + second + '"]');
+    await secondCard.dragTo(unplaced.locator('h2'));
+    await unplaced.locator(secondCard).waitFor();
+    await page.keyboard.press('Control+z');
+    await timeline.locator(secondCard).waitFor();
+    assert.equal(await position(second), 0.501);
+    await page.keyboard.press('Control+Shift+z');
+    await unplaced.locator(secondCard).waitFor();
+    await secondCard.getByRole('button', { name: 'Connect from Another moment' }).dragTo(scene.locator('h3'));
+    await page.locator('#dialog-input').fill('sets up');
+    await page.locator('#dialog-confirm').click();
+    await page.waitForFunction(id => project.connections.some(c => c.from === id && c.to === 'scene' && c.label === 'sets up'), second);
+    await unplaced.locator(secondCard).waitFor();
+
+    await page.evaluate(() => save());
+    const scenePosition = await position('scene');
+    await page.reload();
+    await page.waitForSelector('.note');
+    await page.locator('[data-filter="story"]').click();
+    await timeline.locator(scene).waitFor();
+    await unplaced.locator(secondCard).waitFor();
+    assert.equal(await position('scene'), scenePosition);
+    console.log('Timeline passed: freeform drag, nudging, keyboard placement, Unplaced, undo/redo, and save/reload.');
+  } finally { await app.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });
